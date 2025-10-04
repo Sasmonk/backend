@@ -1,0 +1,28 @@
+Git Ignore for Python/FastAPI Project
+Python Environment and Cache
+.python-version
+pycache/
+*.pyc
+
+Virtual Environments
+.venv
+venv/
+env/
+
+Pip logs
+pip-log.txt
+pip-delete-this-log.txt
+
+OS/IDE Files
+Visual Studio, VSCode, and related
+.vscode/
+.vs/
+*.sln
+*.suo
+*.user
+
+macOS files
+.DS_Store
+
+Sensitive or Local Configuration (CRITICAL)
+.env
