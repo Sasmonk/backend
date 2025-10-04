@@ -31,10 +31,10 @@ exports.updateProduct = async (req, res, next) => {
 };
 
 exports.deleteProduct = async (req, res, next) => {
-    const supabase = getUserClient(req);
-    const { error } = await supabase.from('products').delete().eq('id', req.params.id);
-    if (error) return next(error);
-    res.status(200).json({ success: true, message: 'Product deleted.' });
+    const supabase = getUserClient(req);
+    const { error } = await supabase.from('products').delete().eq('id', req.params.id);
+    if (error) return next(error);
+    res.status(204).end(); // Correctly sends 204 and ends the response
 };
 
 // --- TRUCK CONTROLLERS ---
