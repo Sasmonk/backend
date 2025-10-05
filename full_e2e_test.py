@@ -2,17 +2,17 @@ import requests
 import json
 import random
 import string
+import time
 from uuid import uuid4
 from datetime import datetime, timedelta
-import time
 
 # --- CONFIGURATION ---
-BASE_EXPRESS_URL = "https://backend-wwsc.onrender.com"
+# ✅ FIX: The base URL now correctly points to the /api endpoint on your live server.
+BASE_EXPRESS_URL = "https://backend-wwsc.onrender.com/api"
 SUPABASE_URL = "https://wwnpjzipreoalpwgerik.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3bnBqemlwcmVvYWxwd2dlcmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1NTY5MDQsImV4cCI6MjA3NTEzMjkwNH0.TIqsXfHoccWikQhbYFvsyrycWAGsrrylBsv0COeAihU"
 
 # --- DYNAMIC TEST DATA ---
-# Use a new random email each time to ensure a clean user signup and avoid conflicts
 TEST_EMAIL = f"sashanks732+{uuid4().hex[:6]}@gmail.com"
 TEST_PASSWORD = "TestPass123!"
 TEST_SUFFIX = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -24,8 +24,6 @@ MAIN_PRODUCT_ID = None
 MAIN_TRUCK_ID = None
 MAIN_DESTINATION_ID = None
 SHIPMENT_ID = None
-# This is the primary key (UUID) for the esp_devices table. We generate it once.
-DEVICE_ID = str(uuid4())
 
 # --- UTILITY FUNCTIONS ---
 def print_result(step, response, expected_status=200):
@@ -64,7 +62,7 @@ def api_call(method, url_path, json_data=None, expected_status=200, headers=None
     url = f"{BASE_EXPRESS_URL}{url_path}"
     
     try:
-        response = requests.request(method, url, headers=final_headers, json=json_data, timeout=15)
+        response = requests.request(method, url, headers=final_headers, json=json_data, timeout=20) # Increased timeout for live server
     except requests.exceptions.RequestException as e:
         print(f"\nFATAL: API call failed for {method} {url_path}. Error: {e}")
         return None
@@ -217,7 +215,6 @@ def test_device_endpoints():
     bind_response = api_call('POST', f'/devices/{actual_device_primary_key}/bind', json_data=bind_payload, expected_status=200)
     if not (bind_response and bind_response.json().get('success')): return False
     
-    # ✅ FINAL FIX: Add a small delay to allow for database replication.
     print("\n--- Pausing for 1 second to allow database replication... ---")
     time.sleep(1)
 
@@ -252,7 +249,11 @@ def test_reports_endpoints():
 # --- MAIN EXECUTION ---
 def run_full_test():
     """Runs the full test suite in the correct order."""
-    if not api_call('GET', '/health', expected_status=200):
+    # The health check in the main server is at the root, not under /api
+    health_url = BASE_EXPRESS_URL.replace('/api', '') + '/health'
+    response = requests.get(health_url)
+    print_result("GET /health", response, 200)
+    if not response.ok:
         print("\nFATAL: Express server is not running.")
         return
 
