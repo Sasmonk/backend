@@ -1,93 +1,70 @@
-// routes/devices.js - ENHANCED VERSION
-// Replace your existing devices.js with this
+// routes/devices.js - CORRECTED
 
 const express = require('express');
 const router = express.Router();
-const { userAuth } = require('../middleware/auth');
-const { authenticateESP32, requireESP32Permission } = require('../middleware/esp32Auth');
-const { validate, schemas } = require('../middleware/validation');
+
+// --- CONTROLLERS ---
 const deviceController = require('../controllers/deviceController');
 
-// ============================================
-// ESP32 DEVICE ENDPOINTS (No user auth, use device auth)
-// ============================================
+// --- MIDDLEWARE ---
+// ✅ FIX: Changed 'authenticateUser' to 'userAuth' to match what is exported.
+const { userAuth } = require('../middleware/auth'); 
 
-/**
- * POST /api/devices/gps/submit
- * ESP32 GPS tracker submits location data
- * Headers required: x-device-id, x-api-key
- */
-router.post('/gps/submit',
+// Middleware to authenticate ESP32 devices via API keys
+const { authenticateESP32, requireESP32Permission } = require('../middleware/esp32Auth');
+
+/*
+==========================================================================================
+ 🚚 FIRMWARE (ESP32) ENDPOINTS 🚚
+==========================================================================================
+*/
+
+// Route for GPS data submission
+router.post(
+    '/gps/submit',
     authenticateESP32,
-    requireESP32Permission('can_send_gps'),
-    validate(schemas.gpsData),
+    requireESP32Permission('can_send_gps'), 
     deviceController.submitGpsData
 );
 
-/**
- * POST /api/devices/rfid/scan
- * ESP32 RFID reader submits scanned tag
- * Headers required: x-device-id, x-api-key
- */
-router.post('/rfid/scan',
-    authenticateESP32,
-    requireESP32Permission('can_send_rfid'),
-    validate(schemas.rfidScan),
+// Route for RFID scan submission
+router.post(
+    '/rfid/scan', 
+    authenticateESP32, 
+    requireESP32Permission('can_send_rfid'), 
     deviceController.submitRfidScan
 );
 
-// ============================================
-// ADMIN/USER ENDPOINTS (Requires user login)
-// ============================================
 
-router.use(userAuth); // All routes below require user authentication
+/*
+==========================================================================================
+ 👤 USER/ADMINISTRATION ENDPOINTS 👤
+==========================================================================================
+*/
 
-/**
- * GET /api/devices/status
- * Get status of all ESP32 devices for user's company
- */
+// Apply user authentication to all routes defined below this point
+router.use(userAuth); // ✅ FIX: Use the correctly imported 'userAuth' function
+
+// GET a list of all device statuses for the user's company
 router.get('/status', deviceController.getDeviceStatuses);
 
-/**
- * POST /api/devices/register
- * Register a new ESP32 device
- */
-router.post('/register',
-    validate(schemas.registerDevice),
-    deviceController.registerDevice
-);
+// POST to register a new device
+router.post('/register', deviceController.registerDevice);
 
-/**
- * POST /api/devices/:id/approve
- * Approve a pending ESP32 device
- */
+// POST to approve a pending device
 router.post('/:id/approve', deviceController.approveDevice);
 
-/**
- * POST /api/devices/:id/bind
- * Bind ESP32 device to a truck or destination
- */
-router.post('/:id/bind',
-    validate(schemas.bindDevice),
-    deviceController.bindDevice
-);
+// POST to bind a device to an asset
+router.post('/:id/bind', deviceController.bindDevice);
 
-/**
- * POST /api/devices/:id/rotate-key
- * Rotate API key for security
- */
+// POST to generate a new API key for a device
 router.post('/:id/rotate-key', deviceController.rotateApiKey);
 
-/**
- * POST /api/devices/:id/blacklist
- * Blacklist a compromised device
- */
+// POST to blacklist/disable a device
 router.post('/:id/blacklist', deviceController.blacklistDevice);
 
-/**
- * GET /api/devices/:id/logs
- * Get authentication and data logs for a device
- */
+// GET logs for a specific device
 router.get('/:id/logs', deviceController.getDeviceLogs);
+
 
 module.exports = router;

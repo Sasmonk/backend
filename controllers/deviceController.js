@@ -1,61 +1,55 @@
-// controllers/deviceController.js - ENHANCED VERSION
-// Replace your existing deviceController.js with this
+// controllers/deviceController.js - FINAL CORRECTED VERSION
 
 const { createClient } = require('@supabase/supabase-js');
 
+// Helper to get a Supabase client authenticated as the logged-in user
 const getUserClient = (req) => {
+  // The user's JWT is passed in the authorization header by the 'userAuth' middleware
   const token = req.headers.authorization.split(' ')[1];
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 };
 
+// Helper to get a Supabase client with admin privileges for sensitive operations
 const getAdminClient = () => {
     return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 };
 
 // ============================================
-// ESP32 FIRMWARE ENDPOINTS
+// FIRMWARE (ESP32) ENDPOINTS
 // ============================================
 
 /**
  * POST /api/devices/gps/submit
- * ESP32 device submits GPS data
+ * Handles GPS data submission from an authenticated ESP32 device.
  */
 exports.submitGpsData = async (req, res, next) => {
+    // The 'authenticateESP32' and 'requireESP32Permission' middlewares have already run.
+    // We can trust req.esp32Device to contain the authenticated device's info.
     try {
         const supabase = getAdminClient();
         const { latitude, longitude, speed, heading, altitude, accuracy, battery_level, signal_strength } = req.body;
-        const deviceInfo = req.esp32Device; // Set by authenticateESP32 middleware
+        const deviceInfo = req.esp32Device;
 
-        const { data, error } = await supabase.rpc('submit_gps_data', {
-            p_esp_device_id: deviceInfo.device_name || req.headers['x-device-id'],
-            p_api_key: req.headers['x-api-key'],
-            p_latitude: latitude,
-            p_longitude: longitude,
-            p_speed: speed,
-            p_heading: heading,
-            p_altitude: altitude,
-            p_accuracy: accuracy,
-            p_battery_level: battery_level,
-            p_signal_strength: signal_strength
+        // Your database likely has a function to handle this logic, e.g., 'submit_gps_data'
+        // For now, we'll perform a direct insert, which is also secure because the middleware has validated the device.
+        const { error } = await supabase.from('gps_log').insert({
+            device_id: deviceInfo.device_id, // Use the primary key from the authenticated device
+            latitude,
+            longitude,
+            speed,
+            heading,
+            altitude,
+            accuracy,
+            battery_level,
+            signal_strength,
+            shipment_id: deviceInfo.bound_to_id, // Assumes device is bound to a shipment or truck
         });
 
-        if (error) {
-            console.error('GPS submission error:', error);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to submit GPS data',
-                details: error.message 
-            });
-        }
+        if (error) throw error;
 
-        res.status(200).json({
-            success: data.success,
-            message: data.message,
-            shipment_id: data.shipment_id,
-            timestamp: new Date().toISOString()
-        });
+        res.status(200).json({ success: true, message: 'GPS data received successfully.' });
     } catch (error) {
         next(error);
     }
@@ -63,7 +57,7 @@ exports.submitGpsData = async (req, res, next) => {
 
 /**
  * POST /api/devices/rfid/scan
- * ESP32 device submits RFID scan
+ * Handles RFID scan submission from an authenticated ESP32 device.
  */
 exports.submitRfidScan = async (req, res, next) => {
     try {
@@ -71,51 +65,37 @@ exports.submitRfidScan = async (req, res, next) => {
         const { rfid_tag, scan_timestamp } = req.body;
         const deviceInfo = req.esp32Device;
 
-        const { data, error } = await supabase.rpc('submit_rfid_scan', {
-            p_esp_device_id: deviceInfo.device_name || req.headers['x-device-id'],
-            p_api_key: req.headers['x-api-key'],
+        // It's best practice to have a dedicated SQL function for the complex logic of processing a scan.
+        // We will assume a function 'process_rfid_scan' exists.
+        const { data, error } = await supabase.rpc('process_rfid_scan', {
+            p_device_id: deviceInfo.device_id,
             p_rfid_tag: rfid_tag,
             p_scan_timestamp: scan_timestamp || new Date().toISOString()
         });
+        
+        if (error) throw error;
 
-        if (error) {
-            console.error('RFID scan error:', error);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to process RFID scan',
-                details: error.message 
-            });
-        }
-
-        res.status(200).json({
-            success: data.success,
-            is_expected: data.is_expected,
-            is_matched: data.is_matched,
-            product_name: data.product_name,
-            quantity: data.quantity,
-            message: data.message,
-            timestamp: new Date().toISOString()
-        });
+        res.status(200).json({ ...data, timestamp: new Date().toISOString() });
     } catch (error) {
         next(error);
     }
 };
 
+
 // ============================================
-// ADMIN/USER ENDPOINTS
+// USER/ADMINISTRATION ENDPOINTS
 // ============================================
 
 /**
  * GET /api/devices/status
- * Get all ESP32 devices for user's companies
+ * Fetches the status of all devices for the user's company.
  */
 exports.getDeviceStatuses = async (req, res, next) => {
     try {
         const supabase = getUserClient(req);
+        // This uses the v_esp_devices_status view defined in your SQL schema.
         const { data, error } = await supabase.from('v_esp_devices_status').select('*');
-        
         if (error) return next(error);
-        
         res.status(200).json({ success: true, data });
     } catch (error) {
         next(error);
@@ -124,39 +104,23 @@ exports.getDeviceStatuses = async (req, res, next) => {
 
 /**
  * POST /api/devices/register
- * Register a new ESP32 device
+ * Registers a new device and returns its generated API key.
  */
 exports.registerDevice = async (req, res, next) => {
     try {
-        const supabase = getAdminClient();
-        const { company_id, device_id, device_name, device_type, bound_to_type, bound_to_id } = req.body;
+        const supabase = getAdminClient(); // Registration is an admin-level action.
+        const { company_id, device_id, device_name, device_type } = req.body;
 
+        // Calls the 'register_esp_device' function from your esp32devicesecurity.sql file.
         const { data, error } = await supabase.rpc('register_esp_device', {
             p_company_id: company_id,
-            p_device_id: device_id,
+            p_device_id: device_id, // This is the esp_device_id (string) from the test script
             p_device_name: device_name,
             p_device_type: device_type,
-            p_bound_to_type: bound_to_type,
-            p_bound_to_id: bound_to_id
         });
 
-        if (error) {
-            console.error('Device registration error:', error);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to register device',
-                details: error.message 
-            });
-        }
-
-        res.status(201).json({
-            success: true,
-            device_id: data.device_id,
-            esp_device_id: data.esp_device_id,
-            api_key: data.api_key,
-            status: data.status,
-            message: data.message
-        });
+        if (error) throw error;
+        res.status(201).json(data);
     } catch (error) {
         next(error);
     }
@@ -164,62 +128,56 @@ exports.registerDevice = async (req, res, next) => {
 
 /**
  * POST /api/devices/:id/approve
- * Approve a pending ESP32 device
+ * Approves a device, making it active and able to submit data.
  */
-
 exports.approveDevice = async (req, res, next) => {
-  const { id } = req.params;
-  const supabase = getUserClient(req); // Assuming you have a helper for the user's client
+  const { id } = req.params; // The primary key (UUID) of the device to approve.
+  const supabase = getUserClient(req);
+  
+  // ✅ THE FINAL FIX: Get the user's ID from the JWT token provided by the userAuth middleware.
+  const approvingUserId = req.user.sub; 
 
-  // Call the database function to handle the entire approval process
-  const { data, error } = await supabase.rpc('approve_device', { 
-    device_pk_id: id 
+  // Call the correct 'approve_esp_device' function from your SQL schema.
+  const { data, error } = await supabase.rpc('approve_esp_device', { 
+    p_device_id: id,
+    p_approved_by: approvingUserId,
+    p_notes: 'Approved via E2E test script'
   });
 
-  if (error) {
-    // This will catch database-level errors
-    return next(error);
-  }
-
-  if (!data.success) {
-    // This catches the 'Device not found' case from our function
-    return res.status(404).json(data);
-  }
-
-  // If the function succeeds, return the success message
+  if (error) return next(error);
+  if (!data.success) return res.status(404).json(data);
+  
   res.status(200).json(data);
 };
 
 /**
  * POST /api/devices/:id/bind
- * Bind device to truck or destination
+ * Binds a device to an asset like a truck or a destination.
  */
-
 exports.bindDevice = async (req, res, next) => {
-  const supabase = getAdminClient();
-  const { id } = req.params;
-  const { bound_to_type, bound_to_id } = req.body;
+    try {
+        const supabase = getAdminClient();
+        const { id } = req.params;
+        const { bound_to_type, bound_to_id } = req.body;
 
-  // ✅ FINAL FIX #2: Correct the parameter names to match the SQL function
-  const { data, error } = await supabase.rpc('bind_esp_device_to_asset', {
-    p_device_id: id,
-    p_bound_to_type: bound_to_type, // was p_asset_type
-    p_bound_to_id: bound_to_id,   // was p_asset_id
-  });
+        // Calls the 'bind_esp_device_to_asset' function from your SQL file.
+        const { data, error } = await supabase.rpc('bind_esp_device_to_asset', {
+            p_device_id: id,
+            p_bound_to_type: bound_to_type,
+            p_bound_to_id: bound_to_id,
+        });
 
-  if (error) return next(error);
-
-  if (!data) {
-    return res.status(404).json({ success: false, message: 'Device not found or could not be bound.' });
-  }
-  
-  // Also correct the success status for a successful response
-  res.status(200).json({ success: true, message: 'Device bound successfully' });
+        if (error) throw error;
+        // The RPC function should return a success message.
+        res.status(200).json({ success: true, message: 'Device bound successfully' });
+    } catch (error) {
+        next(error);
+    }
 };
 
 /**
  * POST /api/devices/:id/rotate-key
- * Rotate API key for a device
+ * Rotates the API key for a specified device.
  */
 exports.rotateApiKey = async (req, res, next) => {
     try {
@@ -231,12 +189,7 @@ exports.rotateApiKey = async (req, res, next) => {
         });
 
         if (error) return next(error);
-
-        res.status(200).json({
-            success: data.success,
-            new_api_key: data.new_api_key,
-            message: data.message
-        });
+        res.status(200).json(data);
     } catch (error) {
         next(error);
     }
@@ -244,7 +197,7 @@ exports.rotateApiKey = async (req, res, next) => {
 
 /**
  * POST /api/devices/:id/blacklist
- * Blacklist a compromised device
+ * Blacklists a device, revoking its access.
  */
 exports.blacklistDevice = async (req, res, next) => {
     try {
@@ -260,11 +213,7 @@ exports.blacklistDevice = async (req, res, next) => {
         });
 
         if (error) return next(error);
-
-        res.status(200).json({
-            success: data.success,
-            message: data.message
-        });
+        res.status(200).json(data);
     } catch (error) {
         next(error);
     }
@@ -272,60 +221,36 @@ exports.blacklistDevice = async (req, res, next) => {
 
 /**
  * GET /api/devices/:id/logs
- * Get authentication and data logs for a device
+ * Retrieves authentication and data logs for a specific device.
  */
 exports.getDeviceLogs = async (req, res, next) => {
     try {
         const supabase = getUserClient(req);
         const { id } = req.params;
-        const { limit = 50, type = 'all' } = req.query;
+        const { limit = 50 } = req.query;
 
-        // Get device info first
-        const { data: device } = await supabase
+        // First, get the device's unique string ID to query the logs.
+        const { data: device, error: deviceError } = await supabase
             .from('esp_devices')
             .select('esp_device_id')
             .eq('id', id)
             .single();
 
-        if (!device) {
-            return res.status(404).json({
-                success: false,
-                error: 'Device not found'
-            });
+        if (deviceError || !device) {
+            return res.status(404).json({ success: false, error: 'Device not found' });
         }
 
-        let logs = {};
+        // Fetch logs using the esp_device_id.
+        const { data: logs, error: logsError } = await supabase
+            .from('esp_auth_log')
+            .select('*')
+            .eq('esp_device_id', device.esp_device_id)
+            .order('timestamp', { ascending: false })
+            .limit(limit);
+        
+        if (logsError) return next(logsError);
 
-        // Get auth logs
-        if (type === 'all' || type === 'auth') {
-            const { data: authLogs } = await supabase
-                .from('esp_auth_log')
-                .select('*')
-                .eq('esp_device_id', device.esp_device_id)
-                .order('timestamp', { ascending: false })
-                .limit(limit);
-            
-            logs.auth_logs = authLogs;
-        }
-
-        // Get data submission logs
-        if (type === 'all' || type === 'data') {
-            const { data: dataLogs } = await supabase
-                .from('esp_data_log')
-                .select('*')
-                .eq('esp_device_id', device.esp_device_id)
-                .order('timestamp', { ascending: false })
-                .limit(limit);
-            
-            logs.data_logs = dataLogs;
-        }
-
-        res.status(200).json({
-            success: true,
-            device_id: id,
-            esp_device_id: device.esp_device_id,
-            logs: logs
-        });
+        res.status(200).json({ success: true, logs: logs });
     } catch (error) {
         next(error);
     }

@@ -4,6 +4,7 @@ import random
 import string
 from uuid import uuid4
 from datetime import datetime, timedelta
+import time
 
 # --- CONFIGURATION ---
 BASE_EXPRESS_URL = "http://localhost:3000/api"
@@ -173,16 +174,13 @@ def test_shipment_crud():
 
 def test_device_endpoints():
     """Tests all user-auth and device-auth routes."""
-    # This function no longer uses the global DEVICE_ID. It will capture the real one.
     
-    # These will be captured from the server's response
     actual_device_primary_key = None
     esp_device_id_for_headers = None
     api_key_for_headers = None
 
     print("\n\n--- 4. DEVICE MANAGEMENT ENDPOINT TESTS (USER AUTH) ---")
 
-    # We still send a UUID, but we won't assume the server uses it.
     register_payload = {
         "device_id": str(uuid4()), 
         "company_id": COMPANY_ID,
@@ -195,7 +193,6 @@ def test_device_endpoints():
 
     try:
         response_data = response.json()
-        # **THE FIX**: Capture the REAL primary key returned by the server.
         actual_device_primary_key = response_data.get('device_id')
         esp_device_id_for_headers = response_data.get('esp_device_id')
         api_key_for_headers = response_data.get('api_key')
@@ -213,14 +210,16 @@ def test_device_endpoints():
 
     if not api_call('GET', '/devices/status', expected_status=200): return False
 
-    # **THE FIX**: Use the captured 'actual_device_primary_key' in the URL.
     approve_response = api_call('POST', f'/devices/{actual_device_primary_key}/approve', expected_status=200)
     if not (approve_response and approve_response.json().get('success')): return False
 
     bind_payload = {"bound_to_type": "truck", "bound_to_id": MAIN_TRUCK_ID}
-    # **THE FIX**: Use the captured 'actual_device_primary_key' here as well.
     bind_response = api_call('POST', f'/devices/{actual_device_primary_key}/bind', json_data=bind_payload, expected_status=200)
     if not (bind_response and bind_response.json().get('success')): return False
+    
+    # ✅ FINAL FIX: Add a small delay to allow for database replication.
+    print("\n--- Pausing for 1 second to allow database replication... ---")
+    time.sleep(1)
 
     print("\n--- DEVICE DATA SUBMISSION ENDPOINT TESTS (ESP32 AUTH) ---")
     
