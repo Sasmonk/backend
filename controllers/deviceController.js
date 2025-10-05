@@ -166,55 +166,55 @@ exports.registerDevice = async (req, res, next) => {
  * POST /api/devices/:id/approve
  * Approve a pending ESP32 device
  */
+
 exports.approveDevice = async (req, res, next) => {
-    try {
-        const supabase = getAdminClient();
-        const { id } = req.params;
-        const { notes } = req.body;
-        const approved_by = req.user.sub; // From JWT
+  const { id } = req.params;
+  const supabase = getUserClient(req); // Assuming you have a helper for the user's client
 
-        const { data, error } = await supabase.rpc('approve_esp_device', {
-            p_device_id: id,
-            p_approved_by: approved_by,
-            p_notes: notes
-        });
+  // Call the database function to handle the entire approval process
+  const { data, error } = await supabase.rpc('approve_device', { 
+    device_pk_id: id 
+  });
 
-        if (error) return next(error);
+  if (error) {
+    // This will catch database-level errors
+    return next(error);
+  }
 
-        res.status(200).json({
-            success: data.success,
-            message: data.message
-        });
-    } catch (error) {
-        next(error);
-    }
+  if (!data.success) {
+    // This catches the 'Device not found' case from our function
+    return res.status(404).json(data);
+  }
+
+  // If the function succeeds, return the success message
+  res.status(200).json(data);
 };
 
 /**
  * POST /api/devices/:id/bind
  * Bind device to truck or destination
  */
+
 exports.bindDevice = async (req, res, next) => {
-    try {
-        const supabase = getAdminClient();
-        const { id } = req.params;
-        const { bound_to_type, bound_to_id } = req.body;
+  const supabase = getAdminClient();
+  const { id } = req.params;
+  const { bound_to_type, bound_to_id } = req.body;
 
-        const { data, error } = await supabase.rpc('bind_esp_device', {
-            p_device_id: id,
-            p_bound_to_type: bound_to_type,
-            p_bound_to_id: bound_to_id
-        });
+  // ✅ FINAL FIX #2: Correct the parameter names to match the SQL function
+  const { data, error } = await supabase.rpc('bind_esp_device_to_asset', {
+    p_device_id: id,
+    p_bound_to_type: bound_to_type, // was p_asset_type
+    p_bound_to_id: bound_to_id,   // was p_asset_id
+  });
 
-        if (error) return next(error);
+  if (error) return next(error);
 
-        res.status(200).json({
-            success: data.success,
-            message: 'Device bound successfully'
-        });
-    } catch (error) {
-        next(error);
-    }
+  if (!data) {
+    return res.status(404).json({ success: false, message: 'Device not found or could not be bound.' });
+  }
+  
+  // Also correct the success status for a successful response
+  res.status(200).json({ success: true, message: 'Device bound successfully' });
 };
 
 /**
