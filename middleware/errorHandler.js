@@ -13,5 +13,5 @@ const errorHandler = (err, req, res, next) => {
   });
 };
 
-// ✅ FIX: Export the function directly
+// FIX: Export the function directly instead of in an object
 module.exports = errorHandler;

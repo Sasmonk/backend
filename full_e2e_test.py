@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import time
 
 # --- CONFIGURATION ---
-BASE_EXPRESS_URL = "http://localhost:3000/api"
+BASE_EXPRESS_URL = "https://backend-wwsc.onrender.com"
 SUPABASE_URL = "https://wwnpjzipreoalpwgerik.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3bnBqemlwcmVvYWxwd2dlcmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1NTY5MDQsImV4cCI6MjA3NTEzMjkwNH0.TIqsXfHoccWikQhbYFvsyrycWAGsrrylBsv0COeAihU"
 
